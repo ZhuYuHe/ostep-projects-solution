@@ -1,0 +1,3 @@
+exec use absoluate path
+
+exit not valid;(because son process, need seek real reason)
