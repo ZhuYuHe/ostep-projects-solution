@@ -13,8 +13,7 @@ static const char *CD = "cd";
 static const char *PATH = "path";
 static const char *delim = " ";
 static char cwd[PATH_MAX];
-//static char *redirection = "";
-//static char *redir_file_name = "";
+static char *redir_file_name = "";
 
 static int path_len = 0;
 static char **path_list = NULL;
@@ -119,8 +118,26 @@ void *line_process(char *line, char *res) {
 size_t parse_line(char *line, char ***my_args) {
     *my_args = malloc(sizeof(char*));
     size_t len = 0;
+    bool before_redir = false;
+    redir_file_name = strdup("");
     while (line) {
+        if (strlen(redir_file_name) != 0) {
+            print_message(stderr, error_message, "");
+            return 0;
+        }
         char *sep = strsep(&line, delim);
+        if (before_redir) {
+            redir_file_name = strdup(sep);
+            continue;
+        }
+        if (*sep == '>') {
+            before_redir = true;
+            if (line == NULL) {
+                print_message(stderr, error_message, "");
+                return 0;
+            }
+            continue;
+        }
         if ((*my_args = realloc(*my_args, sizeof(char *) * (++len))) == NULL) {
             print_message(stderr, error_message, "");
             exit(1);
@@ -156,7 +173,7 @@ int exec_line(char *line) {
     size_t arg_len = parse_line(line, &my_args);
     //printf("exec line: %s\n", line);
     //printf("arg_len: %ld\n", arg_len);
-    if (my_args == NULL) {
+    if (arg_len == 0 || my_args == NULL) {
         //printf("my_args is NULL\n");
         return 0;
     }
@@ -208,6 +225,10 @@ int exec_line(char *line) {
         } else if (rc == 0) {
             // son process
             //printf("I am son, my pid is %d\n", (int) getpid());
+            if (strlen(redir_file_name) != 0) {
+                fclose(stdout);
+                fopen(redir_file_name, "w+");
+            }
             if (-1 == execv(cmd, my_args)) {
                 print_message(stderr, error_message, "");
             }
