@@ -31,13 +31,18 @@ int batch_mode(char *file) {
             continue;
         }
         if (exec_line(new_line) != 0) {
+            free(new_line);
             return 1;
         }
+        free(new_line);
     }
+    free(line);
+    fclose(fp);
     return 0;
 }
 
 int main(int argc, char *argv[]) {
+    init_path();
     if (argc == 1) {
         return inactive_mode();
     } else if (argc == 2) {
