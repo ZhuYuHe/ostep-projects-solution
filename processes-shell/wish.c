@@ -22,15 +22,19 @@ int inactive_mode() {
 
 int batch_mode(char *file) {
     FILE *fp = fopen(file, "r");
+    if (fp == NULL) {
+        print_message(stderr, error_message, "");
+        return 1;
+    }
     char *line = NULL;
     size_t n = 0;
     size_t nread = 0;
     while ((nread = getline(&line, &n, fp)) != -1) {
         char *new_line = NULL;
-        if ((new_line = line_process(line, new_line)) == NULL) {
+        new_line = line_process(line, new_line);
+        if (empty(new_line)) {
             continue;
-        }
-        if (exec_line(new_line) != 0) {
+        } if (exec_line(new_line) != 0) {
             free(new_line);
             return 1;
         }

@@ -8,6 +8,8 @@
 #include <linux/limits.h>
 #include <limits.h>
 
+#define MAX_PID_NUM 20
+
 static const char *EXIT = "exit";
 static const char *CD = "cd";
 static const char *PATH = "path";
@@ -187,11 +189,16 @@ void clean(char *line) {
 }
 
 int exec_line(char *total_line) {
-    while (total_line) {
+    int pids[MAX_PID_NUM];
+    int pid_num = 0;
+    while (!empty(total_line)) {
         char *line = strsep(&total_line, "&");
         bool redir = false;
         if (strchr(line, '>') != NULL) {
             redir = true;
+        }
+        if (empty(line)) {
+            return 0;
         }
         char *total_cmd = strsep(&line, ">");
         // line - redirction
@@ -206,7 +213,6 @@ int exec_line(char *total_line) {
         char **my_args = NULL;
         size_t arg_len = parse_line(total_cmd, &my_args);
         if (arg_len == 0 || my_args == NULL) {
-            //printf("my_args is NULL\n");
             return 0;
         }
         my_args = realloc(my_args, sizeof(char*) * (arg_len+1));
@@ -230,7 +236,11 @@ int exec_line(char *total_line) {
                 }
             }
         } else if (str_equal(my_args[0], PATH)) {
-            path_list = realloc(path_list, sizeof(char *) * (arg_len - 1));
+            if (arg_len == 1) {
+                path_list = NULL;
+                continue;
+            }
+            path_list = realloc(path_list, sizeof(char *) * (path_len + arg_len - 1));
             getcwd(cwd, PATH_MAX);
             size_t cwd_len = strlen(cwd);
             cwd[cwd_len] = '/';
@@ -246,9 +256,9 @@ int exec_line(char *total_line) {
                         my_args[i] = strcat(cwd, my_args[i]);
                     }
                 }
-                path_list[i-1] = strdup(my_args[i]);
+                path_list[path_len + i-1] = strdup(my_args[i]);
             }
-            path_len = arg_len-1;
+            path_len += arg_len-1;
         } else if (search_cmd(&cmd)){
             int rc = fork();
             if (rc < 0) {
@@ -265,13 +275,14 @@ int exec_line(char *total_line) {
                     print_message(stderr, error_message, "");
                 }
             } else {
-                // father process
-                wait(NULL);
-                //printf("I am father of (pid: %d), my pid is %d\n", rc, (int) getpid());
+                pids[pid_num++] = rc;
             }
         } else {
             print_message(stderr, error_message, "");
         }
+    }
+    for (int i = 0; i < pid_num; ++i) {
+        waitpid(pids[i], 0, 0);
     }
     return 0;
 }
