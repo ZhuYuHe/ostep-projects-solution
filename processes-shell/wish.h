@@ -13,24 +13,17 @@ static const char *CD = "cd";
 static const char *PATH = "path";
 static const char *delim = " ";
 static char cwd[PATH_MAX];
-static char *redir_file_name = "";
 
 static int path_len = 0;
 static char **path_list = NULL;
 
-//typdef struct consts {
-//    char *EXIT;
-//    char *CD;
-//    char *delim;
-//} consts;
-//
 //typedef struct Environment {
 //    /* Paths set by user */
 //    char *paths;
 //    char cwd[PATH_MAX];
 //    bool path_set_by_user;
 //} Environment;
-//
+
 //typedef struct Launch {
 //    struct Environment *environment;
 //    char *command;
@@ -118,26 +111,8 @@ void *line_process(char *line, char *res) {
 size_t parse_line(char *line, char ***my_args) {
     *my_args = malloc(sizeof(char*));
     size_t len = 0;
-    bool before_redir = false;
-    redir_file_name = strdup("");
     while (line) {
-        if (strlen(redir_file_name) != 0) {
-            print_message(stderr, error_message, "");
-            return 0;
-        }
         char *sep = strsep(&line, delim);
-        if (before_redir) {
-            redir_file_name = strdup(sep);
-            continue;
-        }
-        if (*sep == '>') {
-            before_redir = true;
-            if (line == NULL) {
-                print_message(stderr, error_message, "");
-                return 0;
-            }
-            continue;
-        }
         if ((*my_args = realloc(*my_args, sizeof(char *) * (++len))) == NULL) {
             print_message(stderr, error_message, "");
             exit(1);
@@ -168,77 +143,135 @@ bool search_cmd(char **cmd) {
     return false;
 }
 
-int exec_line(char *line) {
-    char **my_args = NULL;
-    size_t arg_len = parse_line(line, &my_args);
-    //printf("exec line: %s\n", line);
-    //printf("arg_len: %ld\n", arg_len);
-    if (arg_len == 0 || my_args == NULL) {
-        //printf("my_args is NULL\n");
-        return 0;
+bool is_blank_char(char c) {
+    if (c == ' ' || c == '\t')  {
+        return true;
     }
-    my_args = realloc(my_args, sizeof(char*) * (arg_len+1));
-    my_args[arg_len] = NULL;
-    char *cmd = strdup(my_args[0]);
-    if (arg_len == 0) {
-        return 0;
+    return false;
+}
+
+bool empty(char *s) {
+    if (s == NULL || strlen(s) == 0) {
+        return true;
     }
-    if (str_equal(my_args[0], EXIT)) {
-        if (arg_len > 1) {
-            print_message(stderr, error_message, "");
-        } else {
-            exit(0);
+    return false;
+}
+    
+void clean(char *line) {
+    if (line == NULL) {
+        return;
+    }
+    // case : line - _ls -la /home_
+    bool first_non_space = false;
+    int cur = 0;
+    int pre = 0;
+    while (true) {
+        if (line[cur] == '\0') {
+            break;
         }
-    } else if (str_equal(my_args[0], CD)){
-        if (arg_len == 1 || arg_len > 2) {
-            print_message(stderr, error_message, "");
+        if (is_blank_char(line[cur])) {
+            if (first_non_space && !is_blank_char(line[cur-1])) {
+                line[pre] = line[cur];
+                pre++;
+            } 
         } else {
-            if (chdir(my_args[1]) != 0) {
+            first_non_space = true;
+            line[pre] = line[cur];
+            ++pre;
+        }
+        ++cur;
+    }
+    if (is_blank_char(line[--pre])) {
+        line[pre] = '\0';
+    }
+}
+
+int exec_line(char *total_line) {
+    while (total_line) {
+        char *line = strsep(&total_line, "&");
+        bool redir = false;
+        if (strchr(line, '>') != NULL) {
+            redir = true;
+        }
+        char *total_cmd = strsep(&line, ">");
+        // line - redirction
+        // total_cmd - command
+        // totla_line - next cmd
+        clean(line);
+        clean(total_cmd);
+        if (redir && (empty(line) || strchr(line, ' ') != NULL)) {
+            print_message(stderr, error_message, "");
+            continue;
+        }
+        char **my_args = NULL;
+        size_t arg_len = parse_line(total_cmd, &my_args);
+        if (arg_len == 0 || my_args == NULL) {
+            //printf("my_args is NULL\n");
+            return 0;
+        }
+        my_args = realloc(my_args, sizeof(char*) * (arg_len+1));
+        my_args[arg_len] = NULL;
+        char *cmd = strdup(my_args[0]);
+        if (arg_len == 0) {
+            return 0;
+        }
+        if (str_equal(my_args[0], EXIT)) {
+            if (arg_len > 1) {
                 print_message(stderr, error_message, "");
+            } else {
+                exit(0);
             }
-        }
-    } else if (str_equal(my_args[0], PATH)) {
-        path_list = realloc(path_list, sizeof(char *) * (arg_len - 1));
-        getcwd(cwd, PATH_MAX);
-        size_t cwd_len = strlen(cwd);
-        cwd[cwd_len] = '/';
-        for (int i = 1; i < arg_len; ++i) {
-            size_t len = strlen(my_args[i]);
-            if (my_args[i][0] != '/') {
-                if (my_args[i][len-1] != '/') {
-                    my_args[i] = realloc(my_args[i], sizeof(char) * (cwd_len + len + 3));
-                    my_args[i] = strcat(cwd, my_args[i]);
-                    my_args[i][cwd_len+len+1] = '/';
-                } else {
-                    my_args[i] = realloc(my_args[i], sizeof(char) * (cwd_len + len + 2));
-                    my_args[i] = strcat(cwd, my_args[i]);
+        } else if (str_equal(my_args[0], CD)){
+            if (arg_len == 1 || arg_len > 2) {
+                print_message(stderr, error_message, "");
+            } else {
+                if (chdir(my_args[1]) != 0) {
+                    print_message(stderr, error_message, "");
                 }
             }
-            path_list[i-1] = strdup(my_args[i]);
-        }
-        path_len = arg_len-1;
-    } else if (search_cmd(&cmd)){
-        int rc = fork();
-        if (rc < 0) {
-            print_message(stderr, error_message, "");
-            exit(1);
-        } else if (rc == 0) {
-            // son process
-            //printf("I am son, my pid is %d\n", (int) getpid());
-            if (strlen(redir_file_name) != 0) {
-                fclose(stdout);
-                fopen(redir_file_name, "w+");
+        } else if (str_equal(my_args[0], PATH)) {
+            path_list = realloc(path_list, sizeof(char *) * (arg_len - 1));
+            getcwd(cwd, PATH_MAX);
+            size_t cwd_len = strlen(cwd);
+            cwd[cwd_len] = '/';
+            for (int i = 1; i < arg_len; ++i) {
+                size_t len = strlen(my_args[i]);
+                if (my_args[i][0] != '/') {
+                    if (my_args[i][len-1] != '/') {
+                        my_args[i] = realloc(my_args[i], sizeof(char) * (cwd_len + len + 3));
+                        my_args[i] = strcat(cwd, my_args[i]);
+                        my_args[i][cwd_len+len+1] = '/';
+                    } else {
+                        my_args[i] = realloc(my_args[i], sizeof(char) * (cwd_len + len + 2));
+                        my_args[i] = strcat(cwd, my_args[i]);
+                    }
+                }
+                path_list[i-1] = strdup(my_args[i]);
             }
-            if (-1 == execv(cmd, my_args)) {
+            path_len = arg_len-1;
+        } else if (search_cmd(&cmd)){
+            int rc = fork();
+            if (rc < 0) {
                 print_message(stderr, error_message, "");
+                exit(1);
+            } else if (rc == 0) {
+                // son process
+                // printf("I am son, my pid is %d\n", (int) getpid());
+                if (line != NULL) {
+                    fclose(stdout);
+                    fopen(line, "w+");
+                }
+                if (-1 == execv(cmd, my_args)) {
+                    print_message(stderr, error_message, "");
+                }
+            } else {
+                // father process
+                wait(NULL);
+                //printf("I am father of (pid: %d), my pid is %d\n", rc, (int) getpid());
             }
         } else {
-            // father process
-            wait(NULL);
-            //printf("I am father of (pid: %d), my pid is %d\n", rc, (int) getpid());
+            print_message(stderr, error_message, "");
         }
-    } else {
-        print_message(stderr, error_message, "");
     }
     return 0;
 }

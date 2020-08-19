@@ -1,3 +1,12 @@
 exec use absoluate path
 
-exit not valid;(because son process, need seek real reason)
+exit not valid;(because son process, need seek real reason) use valgrind debug
+
+detect redirediction
+
+1. split line into multi line by &
+
+2. split each line into command / args / output
+
+3. parse args before execv
+
