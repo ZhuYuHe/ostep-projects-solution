@@ -1,3 +1,7 @@
+// how-to-create-a-pipe :  https://tldp.org/LDP/lpg/node11.html
+
+
+
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -7,6 +11,7 @@
 #include <sys/wait.h>
 #include <linux/limits.h>
 #include <limits.h>
+#include <fcntl.h>
 
 #define MAX_PID_NUM 20
 
@@ -183,9 +188,7 @@ void clean(char *line) {
         }
         ++cur;
     }
-    if (is_blank_char(line[--pre])) {
-        line[pre] = '\0';
-    }
+    line[pre] = '\0';
 }
 
 int exec_line(char *total_line) {
@@ -206,6 +209,8 @@ int exec_line(char *total_line) {
         // totla_line - next cmd
         clean(line);
         clean(total_cmd);
+        printf("total_cmd: %s, len: %ld\n", total_cmd, strlen(total_cmd));
+        printf("redir: %s\n", line);
         if (redir && (empty(line) || strchr(line, ' ') != NULL)) {
             print_message(stderr, error_message, "");
             continue;
@@ -268,8 +273,8 @@ int exec_line(char *total_line) {
                 // son process
                 // printf("I am son, my pid is %d\n", (int) getpid());
                 if (line != NULL) {
-                    fclose(stdout);
-                    fopen(line, "w+");
+                    int rfd = open(line, O_RDWR | O_CREAT | O_TRUNC, 0600);
+                    dup2(rfd, STDOUT_FILENO);
                 }
                 if (-1 == execv(cmd, my_args)) {
                     print_message(stderr, error_message, "");
