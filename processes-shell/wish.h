@@ -1,7 +1,5 @@
 // how-to-create-a-pipe :  https://tldp.org/LDP/lpg/node11.html
-
-
-
+// include "include.h"
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -13,6 +11,7 @@
 #include <limits.h>
 #include <fcntl.h>
 
+#define MAX_LINE_LEN 200
 #define MAX_PID_NUM 20
 
 static const char *EXIT = "exit";
@@ -23,6 +22,7 @@ static char cwd[PATH_MAX];
 
 static int path_len = 0;
 static char **path_list = NULL;
+static char error_message[30] = "An error has occurred\n";
 
 //typedef struct Environment {
 //    /* Paths set by user */
@@ -38,7 +38,6 @@ static char **path_list = NULL;
 //    char *redirection;
 //} Launch;
 
-char error_message[30] = "An error has occurred\n";
 
 //typedef struct ErrMessage {
     //char *cmd_not_fd;
@@ -48,12 +47,52 @@ char error_message[30] = "An error has occurred\n";
 
 //static const struct ErrMessage message = {"wish: command not found: %s\n", "wish: too much arguments%s\n", "wish: encounter an error\n"};
 //
+//
+//
+void print_message(FILE *out, char *msg, char *pattern) {
+    fprintf(out, msg, pattern);
+}
+bool is_blank_char(char c) {
+    if (c == ' ' || c == '\t' || c == '\0')  {
+        return true;
+    }
+    return false;
+}
 
-void init_path() {
-    path_list = malloc(sizeof(char*));
-    path_list[0] = strdup("/bin/");
-    path_len = 1;
-    getcwd(cwd, PATH_MAX);
+bool empty(char *s) {
+    if (s == NULL || strlen(s) == 0) {
+        return true;
+    }
+    return false;
+}
+void clean(char *line) {
+    if (line == NULL) {
+        return;
+    }
+    // case : line - _ls -la /home_
+    bool first_non_space = false;
+    int cur = 0;
+    int pre = 0;
+    while (true) {
+        if (line[cur] == '\0') {
+            break;
+        }
+        if (is_blank_char(line[cur])) {
+            if (first_non_space && !is_blank_char(line[cur-1])) {
+                line[pre] = line[cur];
+                pre++;
+            } 
+        } else {
+            first_non_space = true;
+            line[pre] = line[cur];
+            ++pre;
+        }
+        ++cur;
+    }
+    line[pre] = '\0';
+    while(is_blank_char(line[--pre])) {
+        line[pre] = '\0';
+    }
 }
 
 bool str_equal(char *s1, const char *s2) {
@@ -69,10 +108,6 @@ bool str_equal(char *s1, const char *s2) {
     } else {
         return false;
     }
-}
-
-void print_message(FILE *out, char *msg, char *pattern) {
-    fprintf(out, msg, pattern);
 }
 
 void *line_process(char *line, char *res) {
@@ -114,22 +149,6 @@ void *line_process(char *line, char *res) {
     return res;
 }
 
-
-size_t parse_line(char *line, char ***my_args) {
-    *my_args = malloc(sizeof(char*));
-    size_t len = 0;
-    while (line) {
-        char *sep = strsep(&line, delim);
-        if ((*my_args = realloc(*my_args, sizeof(char *) * (++len))) == NULL) {
-            print_message(stderr, error_message, "");
-            exit(1);
-        }
-        // strdup is better than realloc memory then strcpy
-        (*my_args)[len-1] = strdup(sep);
-    }
-    return len;
-}
-
 bool search_cmd(char **cmd) {
     if (path_list == NULL) {
         return false;
@@ -150,46 +169,30 @@ bool search_cmd(char **cmd) {
     return false;
 }
 
-bool is_blank_char(char c) {
-    if (c == ' ' || c == '\t')  {
-        return true;
+
+size_t parse_line(char *line, char ***my_args) {
+    *my_args = malloc(sizeof(char*));
+    size_t len = 0;
+    while (line) {
+        char *sep = strsep(&line, delim);
+        if ((*my_args = realloc(*my_args, sizeof(char *) * (++len))) == NULL) {
+            print_message(stderr, error_message, "");
+            exit(1);
+        }
+        // strdup is better than realloc memory then strcpy
+        (*my_args)[len-1] = strdup(sep);
     }
-    return false;
+    return len;
 }
 
-bool empty(char *s) {
-    if (s == NULL || strlen(s) == 0) {
-        return true;
-    }
-    return false;
+void init_path() {
+    path_list = malloc(sizeof(char*));
+    path_list[0] = strdup("/bin/");
+    path_len = 1;
+    getcwd(cwd, PATH_MAX);
 }
-    
-void clean(char *line) {
-    if (line == NULL) {
-        return;
-    }
-    // case : line - _ls -la /home_
-    bool first_non_space = false;
-    int cur = 0;
-    int pre = 0;
-    while (true) {
-        if (line[cur] == '\0') {
-            break;
-        }
-        if (is_blank_char(line[cur])) {
-            if (first_non_space && !is_blank_char(line[cur-1])) {
-                line[pre] = line[cur];
-                pre++;
-            } 
-        } else {
-            first_non_space = true;
-            line[pre] = line[cur];
-            ++pre;
-        }
-        ++cur;
-    }
-    line[pre] = '\0';
-}
+
+
 
 int exec_line(char *total_line) {
     int pids[MAX_PID_NUM];
@@ -209,8 +212,8 @@ int exec_line(char *total_line) {
         // totla_line - next cmd
         clean(line);
         clean(total_cmd);
-        printf("total_cmd: %s, len: %ld\n", total_cmd, strlen(total_cmd));
-        printf("redir: %s\n", line);
+        //printf("total_cmd: %s, len: %ld\n", total_cmd, strlen(total_cmd));
+        //printf("redir: %s\n", line);
         if (redir && (empty(line) || strchr(line, ' ') != NULL)) {
             print_message(stderr, error_message, "");
             continue;

@@ -2,7 +2,7 @@
 
 int inactive_mode() {
     while (true) {
-        print_message(stdout, "wish> ", "");
+        fprintf(stdout, "wish> ");
         char *line = NULL;
         size_t n = 0;
         size_t nread = 0; 
