@@ -11,18 +11,6 @@
 #include <limits.h>
 #include <fcntl.h>
 
-#define MAX_LINE_LEN 200
-#define MAX_PID_NUM 20
-
-static const char *EXIT = "exit";
-static const char *CD = "cd";
-static const char *PATH = "path";
-static const char *delim = " ";
-static char cwd[PATH_MAX];
-
-static int path_len = 0;
-static char **path_list = NULL;
-static char error_message[30] = "An error has occurred\n";
 
 //typedef struct Environment {
 //    /* Paths set by user */
@@ -171,37 +159,23 @@ bool search_cmd(char **cmd) {
 
 
 size_t parse_line(char *line, char ***my_args) {
-    *my_args = malloc(sizeof(char*));
     size_t len = 0;
     while (line) {
         char *sep = strsep(&line, delim);
-        if ((*my_args = realloc(*my_args, sizeof(char *) * (++len))) == NULL) {
-            print_message(stderr, error_message, "");
-            exit(1);
-        }
-        // strdup is better than realloc memory then strcpy
         (*my_args)[len-1] = strdup(sep);
     }
     return len;
 }
 
-void init_path() {
-    path_list = malloc(sizeof(char*));
-    path_list[0] = strdup("/bin/");
-    path_len = 1;
-    getcwd(cwd, PATH_MAX);
-}
-
-
-
-int exec_line(char *total_line) {
-    int pids[MAX_PID_NUM];
+int exec_line(LineContext *line_context) {
     int pid_num = 0;
+    char *total_line = line_context->line;
     while (!empty(total_line)) {
         char *line = strsep(&total_line, "&");
-        bool redir = false;
+        ProcessContext process_context;
+        process_context.is_redir = false;
         if (strchr(line, '>') != NULL) {
-            redir = true;
+            process_context.is_redir = true;
         }
         if (empty(line)) {
             return 0;
@@ -212,59 +186,58 @@ int exec_line(char *total_line) {
         // totla_line - next cmd
         clean(line);
         clean(total_cmd);
-        //printf("total_cmd: %s, len: %ld\n", total_cmd, strlen(total_cmd));
-        //printf("redir: %s\n", line);
-        if (redir && (empty(line) || strchr(line, ' ') != NULL)) {
-            print_message(stderr, error_message, "");
+        process_context.redir_file = line;
+        process_context.cmd = total_cmd;
+        if (process_context.is_redir && (empty(line) || strchr(line, ' ') != NULL)) {
+            ERROR;
             continue;
         }
         char **my_args = NULL;
-        size_t arg_len = parse_line(total_cmd, &my_args);
-        if (arg_len == 0 || my_args == NULL) {
-            return 0;
-        }
-        my_args = realloc(my_args, sizeof(char*) * (arg_len+1));
-        my_args[arg_len] = NULL;
-        char *cmd = strdup(my_args[0]);
+        char *argv[MAX_ARGUMENTS];
+        size_t arg_len = parse_line(total_cmd, &argv);
         if (arg_len == 0) {
             return 0;
         }
-        if (str_equal(my_args[0], EXIT)) {
+        process_context.argv = argv;
+        if (arg_len == 0) {
+            return 0;
+        }
+        if (str_equal(argv[0], "exit")) {
             if (arg_len > 1) {
-                print_message(stderr, error_message, "");
+                ERROR;
             } else {
                 exit(0);
             }
-        } else if (str_equal(my_args[0], CD)){
+        } else if (str_equal(argv[0], "cd")){
             if (arg_len == 1 || arg_len > 2) {
-                print_message(stderr, error_message, "");
+                ERROR;
             } else {
-                if (chdir(my_args[1]) != 0) {
-                    print_message(stderr, error_message, "");
+                if (chdir(argv[1]) != 0) {
+                    ERROR;
                 }
             }
-        } else if (str_equal(my_args[0], PATH)) {
+        } else if (str_equal(my_args[0], "path")) {
             if (arg_len == 1) {
-                path_list = NULL;
+                line_context->shell_context->paths = NULL;
                 continue;
             }
-            path_list = realloc(path_list, sizeof(char *) * (path_len + arg_len - 1));
-            getcwd(cwd, PATH_MAX);
+            line_context->shell_context->paths = realloc(path_list, sizeof(char *) * (path_len + arg_len - 1));
+            char *cmd = line_context->shell_context->cwd;
             size_t cwd_len = strlen(cwd);
             cwd[cwd_len] = '/';
             for (int i = 1; i < arg_len; ++i) {
-                size_t len = strlen(my_args[i]);
-                if (my_args[i][0] != '/') {
-                    if (my_args[i][len-1] != '/') {
-                        my_args[i] = realloc(my_args[i], sizeof(char) * (cwd_len + len + 3));
-                        my_args[i] = strcat(cwd, my_args[i]);
-                        my_args[i][cwd_len+len+1] = '/';
+                size_t len = strlen(argv[i]);
+                if (argv[i][0] != '/') {
+                    if (argv[i][len-1] != '/') {
+                        argv[i] = realloc(argv[i], sizeof(char) * (cwd_len + len + 3));
+                        argv[i] = strcat(cwd, argv[i]);
+                        argv[i][cwd_len+len+1] = '/';
                     } else {
-                        my_args[i] = realloc(my_args[i], sizeof(char) * (cwd_len + len + 2));
-                        my_args[i] = strcat(cwd, my_args[i]);
+                        argv[i] = realloc(argv[i], sizeof(char) * (cwd_len + len + 2));
+                        argv[i] = strcat(cwd, argv[i]);
                     }
                 }
-                path_list[path_len + i-1] = strdup(my_args[i]);
+                line_context->shell_context->paths[path_len + i-1] = strdup(my_args[i]);
             }
             path_len += arg_len-1;
         } else if (search_cmd(&cmd)){

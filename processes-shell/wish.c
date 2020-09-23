@@ -1,21 +1,25 @@
 #include "wish.h"
+#include "string_utils.h"
 
 int inactive_mode() {
+    ShellContext shell_context;
+    shell_context.paths = "/bin";
+    getcwd(shell_context.cwd, PATH_MAX);
     while (true) {
         fprintf(stdout, "wish> ");
+        LineContext line_context;
+        line_context.shell_context = &shell_context;
         char *line = NULL;
         size_t n = 0;
         size_t nread = 0; 
         if ((nread = getline(&line, &n, stdin)) <= 1) {
             continue;
         }
-        char *new_line = NULL;
-        if ((new_line = line_process(line, new_line)) == NULL) {
+        if ((line_context.line = line_process(line, line_context.line)) == NULL) {
             continue;
         }
-        exec_line(new_line);
+        exec_line(&line_context);
         free(line);
-        free(new_line);
     }
     return 0;
 }

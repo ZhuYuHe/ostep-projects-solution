@@ -1,3 +1,4 @@
+#include "string_utils.h"
 #include "include.h"
 void clean(char *line) {
     if (line == NULL) {
